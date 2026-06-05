@@ -1,49 +1,41 @@
 /**
- * Stabile Test-Fixtures fuer den Visual-QA-Workflow.
+ * Test-Fixtures fuer den Visual-QA-Workflow.
  *
- * Alle Werte hier sind im Dev-Store `dev-store-4ogqgshg` fest angelegt:
- * - Produkt "QA Test Produkt" mit Handle qa-test-produkt
- * - Collection "QA Test Collection" mit Handle qa-test-collection
- * - Page "QA Block Test" mit Handle qa-block-test, Template qa-block-test
+ * WICHTIG: Diese Datei wird aus dem Theme-Template kopiert und MUSS
+ * pro Shop angepasst werden. Die Platzhalter __THEME_ID__,
+ * __PRODUCT_HANDLE__, __COLLECTION_HANDLE__ usw. sind nicht funktional —
+ * der Workflow stoppt in Schritt 0.5 (shopify-visual-qa Skill), bis
+ * sie durch echte Werte aus dem aktuell verbundenen Shop ersetzt sind.
  *
- * Diese Datei wird von block-spezifischen Tests importiert.
+ * Werte koennen vom Nutzer manuell gesetzt werden oder von Claude
+ * via Shopify-MCP automatisch aus dem aktuellen Store ermittelt
+ * werden (get-shop-info, themes(), products(), collections()).
  */
 
 export const QA = {
-  /** ID des QA Preview Themes, in das CLI-Push die Aenderungen schiebt. */
-  themeId: "145381884019",
+  /** ID des Test-Themes (UNPUBLISHED) im Dev-Store. */
+  themeId: "__THEME_ID__",
 
-  /** Bekannte Fixtures im Dev-Store. */
+  /** Bekannte Fixtures im aktuellen Shop. Werden pro Repo gesetzt. */
   product: {
-    handle: "qa-test-produkt",
-    id: "8267391139955",
-    firstVariantSku: "QA-S-BLACK",
+    handle: "__PRODUCT_HANDLE__",
   },
   collection: {
-    handle: "qa-test-collection",
-    id: "317774135411",
+    handle: "__COLLECTION_HANDLE__",
   },
 
   /** Mapping: Template-Typ -> Pfad ohne Query-String. */
   paths: {
     home: "/",
-    qaBlock: "/pages/qa-block-test",
-    product: "/products/qa-test-produkt",
-    collection: "/collections/qa-test-collection",
+    qaBlock: "/",
+    product: "/products/__PRODUCT_HANDLE__",
+    collection: "/collections/__COLLECTION_HANDLE__",
     cart: "/cart",
-    search: "/search?q=qa",
+    search: "/search?q=test",
     notFound: "/this-page-does-not-exist",
   },
 } as const;
 
-/**
- * Haengt preview_theme_id korrekt an einen Pfad an (egal ob er schon
- * einen Query-String hat oder nicht).
- *
- * @example
- *   await page.goto(withTheme(QA.paths.product));
- *   // -> /products/qa-test-produkt?preview_theme_id=145381884019
- */
 export function withTheme(path: string): string {
   const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}preview_theme_id=${QA.themeId}`;

@@ -45,28 +45,44 @@ Wenn Tools fehlen: `npm install`, `npx playwright install chromium`.
 
 ## 0.5 — Repo-Config-Check (einmalig beim ersten Auftrag pro Repo)
 
-Bevor du das erste Mal in einem neuen Repo etwas baust, prüfe ob die shop-spezifischen Konfigurationen schon gesetzt sind. Aus dem Template-Repo kopierte Files enthalten oft noch Platzhalter oder die Werte des alten Shops:
+Bevor du das erste Mal in einem neuen Repo etwas baust, prüfe ob die shop-spezifischen Konfigurationen schon gesetzt sind. Frisch aus dem Template-Repo geklonte Files enthalten Platzhalter, die zwingend ersetzt werden müssen.
 
 ```bash
-grep -rn "__THEME_ID__\|__PROD_THEME_ID__\|dev-store-4ogqgshg\|fashion-dev-zekm0nfo\|fashion-o4ccall8\|zjyfg5-ya" \
+grep -rn "__THEME_ID__\|__STORE_DOMAIN__\|__PRODUCT_HANDLE__\|__COLLECTION_HANDLE__\|__PROD_THEME_ID__" \
   shopify.theme.toml playwright.config.ts tests/fixtures.ts tests/global-setup.ts 2>/dev/null
 ```
 
-Treffer-Interpretation:
+Falls einer dieser Platzhalter gefunden wird: **stoppe den Workflow** und gehe wie folgt vor.
 
-- `__THEME_ID__` oder `__PROD_THEME_ID__` → noch nicht gesetzt, ist ein offener Platzhalter
-- Eine andere Store-Domain als die deines aktuellen Repos → das Repo wurde aus dem Template kopiert, aber nicht auf den aktuellen Shop umkonfiguriert
+### Schritt A — Aktuellen Shop identifizieren
 
-Wenn einer dieser Fälle eintritt: **stoppe den Workflow** und melde dem Nutzer welche der vier Config-Files noch shop-spezifisch angepasst werden muss:
+Wenn Shopify-MCP verfügbar ist (`mcp__shopify__get-shop-info` oder Connector-Tool), automatisch ermitteln:
+1. `get-shop-info` → liefert Store-Domain (z. B. `fashion-o4ccall8.myshopify.com`)
+2. `themes()` query → finde ein UNPUBLISHED Theme als Test-Target (oder dupliziere das MAIN-Theme via `themeDuplicate` falls keins existiert)
+3. `products(first: 5)` → erstes verfügbares Produkt als Test-Fixture
+4. `collections(first: 5)` → erste verfügbare Collection
 
-| Datei | Was anzupassen |
+Wenn Shopify-MCP **nicht** verfügbar ist: frag den Nutzer nach den vier Werten und liste ihm konkret auf, was er bereitstellen muss.
+
+### Schritt B — Werte in die vier Config-Files setzen
+
+| Datei | Platzhalter → echter Wert |
 |---|---|
-| `shopify.theme.toml` | `store = "<shop>.myshopify.com"`, `theme = "<test-theme-id>"` |
-| `tests/fixtures.ts` | `themeId`, `product.handle`, `collection.handle`, `paths.product`, `paths.collection` |
-| `playwright.config.ts` | `baseURL: "https://<shop>.myshopify.com"` |
-| `tests/global-setup.ts` | Konstante `STORE_BASE` |
+| `shopify.theme.toml` | `__STORE_DOMAIN__` → Store-Handle (ohne `.myshopify.com`-Suffix); `__THEME_ID__` → Test-Theme-ID |
+| `tests/fixtures.ts` | `__THEME_ID__` → Test-Theme-ID; `__PRODUCT_HANDLE__` → Produkt-Handle aus aktuellem Shop; `__COLLECTION_HANDLE__` → Collection-Handle aus aktuellem Shop |
+| `playwright.config.ts` | `__STORE_DOMAIN__` → Store-Handle |
+| `tests/global-setup.ts` | `__STORE_DOMAIN__` → Store-Handle |
 
-Erst wenn alle Platzhalter ersetzt sind und die Werte zum aktuellen Shop passen (verifizierbar via `get-shop-info` falls Shopify-MCP verfügbar), mit Schritt 1 weitermachen.
+WICHTIG: Niemals einen Produkt-Handle aus einem ANDEREN Shop hardcoden, sondern immer aus dem aktuell via Connector verbundenen Shop. Wenn `get-shop-info` `fashion-o4ccall8` zurückgibt, dürfen die Test-Fixtures nicht auf `qa-test-produkt` aus dem alten Dev-Store zeigen.
+
+### Schritt C — Verifizieren
+
+Vor dem ersten Test-Push:
+- `shopify.theme.toml` und `tests/fixtures.ts` enthalten keine `__...__`-Platzhalter mehr
+- Die Store-Domain in allen vier Files ist identisch
+- Falls Shopify-MCP verfügbar: `get-shop-info` bestätigt dass der hardcoded Store dem verbundenen Shop entspricht
+
+Erst dann mit Schritt 1 weitermachen.
 
 
 ## 1 — Test-Ziel-URL bestimmen
