@@ -45,44 +45,46 @@ Wenn Tools fehlen: `npm install`, `npx playwright install chromium`.
 
 ## 0.5 — Repo-Config-Check (einmalig beim ersten Auftrag pro Repo)
 
-Bevor du das erste Mal in einem neuen Repo etwas baust, prüfe ob die shop-spezifischen Konfigurationen schon gesetzt sind. Frisch aus dem Template-Repo geklonte Files enthalten Platzhalter, die zwingend ersetzt werden müssen.
+Frisch aus dem Template geklonte Files enthalten Platzhalter, die pro Shop einmal ersetzt werden müssen. Produkt- und Collection-Handles **brauchst du nicht** zu setzen — die ermittelt der `tests/global-setup.ts` automatisch beim ersten Testlauf via `/products.json` und `/collections.json` und legt sie in `playwright/.auth/discovered.json` ab.
+
+Was du wirklich setzen musst sind nur **zwei** Werte: die Store-Domain und die Test-Theme-ID.
 
 ```bash
-grep -rn "__THEME_ID__\|__STORE_DOMAIN__\|__PRODUCT_HANDLE__\|__COLLECTION_HANDLE__\|__PROD_THEME_ID__" \
+grep -rn "__THEME_ID__\|__STORE_DOMAIN__\|__PROD_THEME_ID__" \
   shopify.theme.toml playwright.config.ts tests/fixtures.ts tests/global-setup.ts 2>/dev/null
 ```
 
-Falls einer dieser Platzhalter gefunden wird: **stoppe den Workflow** und gehe wie folgt vor.
+Falls Platzhalter gefunden werden: **stoppe den Workflow** und gehe wie folgt vor.
 
-### Schritt A — Aktuellen Shop identifizieren
+### Schritt A — Werte ermitteln
 
-Wenn Shopify-MCP verfügbar ist (`mcp__shopify__get-shop-info` oder Connector-Tool), automatisch ermitteln:
-1. `get-shop-info` → liefert Store-Domain (z. B. `fashion-o4ccall8.myshopify.com`)
-2. `themes()` query → finde ein UNPUBLISHED Theme als Test-Target (oder dupliziere das MAIN-Theme via `themeDuplicate` falls keins existiert)
-3. `products(first: 5)` → erstes verfügbares Produkt als Test-Fixture
-4. `collections(first: 5)` → erste verfügbare Collection
+Wenn Shopify-MCP verfügbar ist:
+1. `get-shop-info` → Store-Domain (z. B. `fashion-o4ccall8.myshopify.com`)
+2. `themes()` query → Test-Theme finden:
+   - Bevorzugt ein UNPUBLISHED Theme mit Name "Test", "QA Preview" oder "Sandbox"
+   - Sonst das erste UNPUBLISHED Theme
+   - Wenn keins existiert: vorschlagen, eines via `themeDuplicate` zu erzeugen
 
-Wenn Shopify-MCP **nicht** verfügbar ist: frag den Nutzer nach den vier Werten und liste ihm konkret auf, was er bereitstellen muss.
+Wenn Shopify-MCP nicht verfügbar ist: nach den zwei Werten fragen.
 
-### Schritt B — Werte in die vier Config-Files setzen
+### Schritt B — In die Files setzen
 
-| Datei | Platzhalter → echter Wert |
+| Datei | Platzhalter → Wert |
 |---|---|
-| `shopify.theme.toml` | `__STORE_DOMAIN__` → Store-Handle (ohne `.myshopify.com`-Suffix); `__THEME_ID__` → Test-Theme-ID |
-| `tests/fixtures.ts` | `__THEME_ID__` → Test-Theme-ID; `__PRODUCT_HANDLE__` → Produkt-Handle aus aktuellem Shop; `__COLLECTION_HANDLE__` → Collection-Handle aus aktuellem Shop |
+| `shopify.theme.toml` | `__STORE_DOMAIN__` → Store-Handle (ohne `.myshopify.com`); `__THEME_ID__` → Test-Theme-ID |
+| `tests/fixtures.ts` | `__THEME_ID__` → Test-Theme-ID |
 | `playwright.config.ts` | `__STORE_DOMAIN__` → Store-Handle |
 | `tests/global-setup.ts` | `__STORE_DOMAIN__` → Store-Handle |
 
-WICHTIG: Niemals einen Produkt-Handle aus einem ANDEREN Shop hardcoden, sondern immer aus dem aktuell via Connector verbundenen Shop. Wenn `get-shop-info` `fashion-o4ccall8` zurückgibt, dürfen die Test-Fixtures nicht auf `qa-test-produkt` aus dem alten Dev-Store zeigen.
+Produkt- und Collection-Handles **nicht** hardcoden — sie werden zur Laufzeit automatisch aus dem aktuell verbundenen Shop ermittelt.
 
 ### Schritt C — Verifizieren
 
-Vor dem ersten Test-Push:
-- `shopify.theme.toml` und `tests/fixtures.ts` enthalten keine `__...__`-Platzhalter mehr
-- Die Store-Domain in allen vier Files ist identisch
-- Falls Shopify-MCP verfügbar: `get-shop-info` bestätigt dass der hardcoded Store dem verbundenen Shop entspricht
+- Keine `__...__`-Platzhalter mehr in den vier Files
+- Store-Domain ist überall identisch
+- Falls Shopify-MCP verfügbar: `get-shop-info` bestätigt Übereinstimmung mit dem hardcoded Wert
 
-Erst dann mit Schritt 1 weitermachen.
+Erst dann mit Schritt 1 weitermachen. Beim ersten Test-Lauf legt global-setup.ts dann `discovered.json` an mit dem ersten Produkt/Collection aus dem Shop — ab da nutzt der Workflow diese Werte automatisch.
 
 
 ## 1 — Test-Ziel-URL bestimmen
