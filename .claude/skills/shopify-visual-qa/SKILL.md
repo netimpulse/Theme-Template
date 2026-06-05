@@ -42,6 +42,33 @@ Wenn eine Pflicht-Variable fehlt: stoppe, frag den Nutzer einmal in der Session.
 
 Wenn Tools fehlen: `npm install`, `npx playwright install chromium`.
 
+
+## 0.5 — Repo-Config-Check (einmalig beim ersten Auftrag pro Repo)
+
+Bevor du das erste Mal in einem neuen Repo etwas baust, prüfe ob die shop-spezifischen Konfigurationen schon gesetzt sind. Aus dem Template-Repo kopierte Files enthalten oft noch Platzhalter oder die Werte des alten Shops:
+
+```bash
+grep -rn "__THEME_ID__\|__PROD_THEME_ID__\|dev-store-4ogqgshg\|fashion-dev-zekm0nfo\|fashion-o4ccall8\|zjyfg5-ya" \
+  shopify.theme.toml playwright.config.ts tests/fixtures.ts tests/global-setup.ts 2>/dev/null
+```
+
+Treffer-Interpretation:
+
+- `__THEME_ID__` oder `__PROD_THEME_ID__` → noch nicht gesetzt, ist ein offener Platzhalter
+- Eine andere Store-Domain als die deines aktuellen Repos → das Repo wurde aus dem Template kopiert, aber nicht auf den aktuellen Shop umkonfiguriert
+
+Wenn einer dieser Fälle eintritt: **stoppe den Workflow** und melde dem Nutzer welche der vier Config-Files noch shop-spezifisch angepasst werden muss:
+
+| Datei | Was anzupassen |
+|---|---|
+| `shopify.theme.toml` | `store = "<shop>.myshopify.com"`, `theme = "<test-theme-id>"` |
+| `tests/fixtures.ts` | `themeId`, `product.handle`, `collection.handle`, `paths.product`, `paths.collection` |
+| `playwright.config.ts` | `baseURL: "https://<shop>.myshopify.com"` |
+| `tests/global-setup.ts` | Konstante `STORE_BASE` |
+
+Erst wenn alle Platzhalter ersetzt sind und die Werte zum aktuellen Shop passen (verifizierbar via `get-shop-info` falls Shopify-MCP verfügbar), mit Schritt 1 weitermachen.
+
+
 ## 1 — Test-Ziel-URL bestimmen
 
 Bevor du den Code schreibst, entscheide klar, **gegen welche URL** der Block getestet wird. Logik in dieser Reihenfolge prüfen:
