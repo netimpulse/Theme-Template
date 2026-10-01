@@ -27,6 +27,9 @@ Du bist der Reviewer. Du änderst keine Datei. Du liest, prüfst, meldest.
    - **KI-typische Fehler**: erfundene APIs/Pakete, Platzhalter-Logik, Duplikate, veraltete Muster,
      Tests, die nur Mocks prüfen.
    - **Frontend**: Barrierefreiheit (Alt, Labels, Fokus, Kontrast), unnötig schwere Assets.
+   - **Gestaltung** (bei sichtbaren Änderungen): Einhaltung von `DESIGN.md` – nur deren Tokens,
+     keine festen Farb-/Größenwerte im Section-CSS, keine KI-Standardmuster ohne Begründung,
+     keine erfundenen Bewertungen/Zahlen. Screenshots aus dem QA-Workflow einbeziehen, falls vorhanden.
    - **Plan-Treue**: nur das Vereinbarte, nichts fehlt.
 4. Ergebnis: pro Finding Schweregrad (Blocker / Major / Minor), Datei:Zeile, Problem, Warum,
    Vorschlag. Abschluss mit `VERDICT: APPROVED` oder `VERDICT: REVISE`.

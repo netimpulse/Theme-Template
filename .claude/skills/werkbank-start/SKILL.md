@@ -62,16 +62,25 @@ Sag in einem Satz, wie Du einstufst und warum. Der Nutzer kann umstufen.
 - Wichtige Entscheidungen aus dem Plan (Abschnitt 4) legst Du dem Nutzer vor – nicht den ganzen Plan.
 
 **C · Design** (immer, wenn sich etwas Sichtbares ändert)
-- Neue oder spürbar veränderte Oberfläche: `designer` erstellt **2** klar unterschiedliche
-  Varianten (eine dritte nur, wenn der Nutzer mehr Auswahl will). Öffne sie (Windows:
-  `explorer.exe "<pfad>"`, macOS `open`, Linux `xdg-open`), nenne die Pfade, frag mit
-  AskUserQuestion. **Der Nutzer wählt.** Ohne Wahl kein Oberflächen-Code.
-  Cloud-Sitzung ohne Browser: Vorschau-Weg des Projekts nutzen (z. B. unveröffentlichtes Theme
-  mit Vorschau-Link, nie das Live-Theme), sonst Varianten auf den Arbeitsbranch pushen.
-- Nach der Wahl hältst **Du** die Richtung in `design/system.md` fest (Farben, Schrift,
-  Abstände, Muster – knapp). Den Designer dafür nicht erneut starten.
-- Kleine Änderung, die ein bestehendes Muster exakt übernimmt: beschreiben und bestätigen lassen.
-- Kein Designsystem vorhanden: vorher nach Stilwünschen fragen (Vorbilder, Farben, Dichte, No-Gos).
+- **Erst die Richtung, dann Entwürfe:** Gibt es im Projektstamm keine `DESIGN.md`, zuerst den Skill
+  `werkbank-design-richtung` ausführen (Brief, Design-Read, zwei Richtungen, Nutzer wählt, DESIGN.md).
+  Ohne festgelegte Richtung sehen alle Shops gleich aus – das ist der Hauptgrund für KI-Einheitslook.
+  Ausnahme: reine Fehlerbehebung ohne gestalterische Wirkung.
+- Geschmacksregeln: `${CLAUDE_SKILL_DIR}/../werkbank-design-richtung/geschmack.md` – Pfad jedem
+  `designer`-Auftrag mitgeben; Du selbst hältst Dich beim Umsetzen ebenfalls daran.
+- Neue oder spürbar veränderte Oberfläche: `designer` (Auftrag „Varianten") erstellt **2** Entwürfe,
+  die sich in Aufbau und Layout-Familie unterscheiden (dritter nur auf Wunsch). Bei ganzen Seiten
+  gehört die **Seitenkomposition** dazu (Abfolge, Layout-Familie je Section, Rhythmus). Öffne die
+  Entwürfe (Windows `explorer.exe "<pfad>"`, macOS `open`, Linux `xdg-open`), nenne die Pfade, frag
+  mit AskUserQuestion. **Der Nutzer wählt.** Ohne Wahl kein Oberflächen-Code.
+  Cloud-Sitzung ohne Browser: Vorschau-Weg des Projekts (z. B. unveröffentlichtes Theme mit
+  Vorschau-Link, nie das Live-Theme), sonst Entwürfe auf den Arbeitsbranch pushen.
+- Bringt die Wahl neue Muster (Komponente, Variante, Layout-Familie), trägst **Du** sie in
+  `DESIGN.md` nach, bevor gebaut wird.
+- Kleine Änderung, die ein bestehendes Muster aus DESIGN.md exakt übernimmt: beschreiben und
+  bestätigen lassen, keine Entwürfe nötig.
+- Beim Umsetzen nur Tokens aus DESIGN.md; vor der Prüfung den Pre-Flight aus `geschmack.md`
+  Abschnitt 6 am fertigen Ergebnis durchgehen (Screenshots aus dem QA-Workflow nutzen).
 
 **D · Umsetzen**
 - Git: eigener Arbeitsbranch, kleine Commits, Diffs < ~400 Zeilen je Schritt.
