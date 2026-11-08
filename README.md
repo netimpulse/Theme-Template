@@ -5,10 +5,12 @@ Template-Repo fuer neue Shopify-Themes mit integriertem Visual-QA-Workflow
 
 ## Was hier drin ist
 
+- `CLAUDE.md` – Projektregeln fuer Claude (Liquid & Theme-Editor)
+- `.claude/skills/shopify-visual-qa/` – QA-Schleife: Push ins Test-Theme, Playwright, Screenshots ansehen, nachbessern
 - `package.json` – Dependencies & npm-Scripts
-- `playwright.config.ts` – Test-Runner Konfiguration mit hardcoded Preview-URL
-- `tests/_base.spec.ts` – Generische Visual-Tests, die fuer jeden Block laufen
-- `templates/page.qa-block-test.json` – QA-Page Inhalt (wird von Claude pro Block ueberschrieben)
+- `playwright.config.ts` – Test-Runner Konfiguration (Desktop + Mobile)
+- `tests/_base.spec.ts` – Generische Checks + Homepage-Screenshots, laufen bei jedem Testlauf
+- `tests/fixtures.ts`, `tests/global-setup.ts` – Test-Theme-ID, Storefront-Login, automatische Ermittlung von Produkt/Collection
 - `shopify.theme.toml` – Shopify CLI Config mit Dev-/Prod-Environments
 - `.gitignore`, `.env.example` – Standard-Boilerplate
 - `ignore`-Block in `shopify.theme.toml` – verhindert, dass QA-Dateien beim Production-Push landen
@@ -29,35 +31,34 @@ Skeleton-Theme-Dateien (sections, snippets, layout, assets) werden ueber den
    ```bash
    export SHOPIFY_CLI_THEME_TOKEN=shptka_xxx
    ```
-5. Erstes Push als unpublished Theme:
+5. Store-Domain eintragen: `__STORE_DOMAIN__` in `shopify.theme.toml`,
+   `playwright.config.ts` und `tests/global-setup.ts` ersetzen.
+6. Test-Theme anlegen (erstes Push als unpublished Theme):
    ```bash
    npm run theme:push:dev
    ```
-   Theme-ID aus der CLI-Ausgabe merken.
-6. Theme-ID einsetzen in:
-   - `shopify.theme.toml` -> `theme = "..."`
-   - `playwright.config.ts` -> `preview_theme_id=...` (Platzhalter `__THEME_ID__` ersetzen)
+   Theme-ID aus der CLI-Ausgabe fuer `__THEME_ID__` in `shopify.theme.toml`
+   und `tests/fixtures.ts` einsetzen.
 
-## Im Dev-Store einmalig pro Theme
+Gibt es im Shop schon ein unveroeffentlichtes Test-Theme, uebernimmt Claude die
+Schritte 5 und 6 beim ersten Auftrag (Skill-Schritt 0.5).
 
-Damit Playwright eine echte URL ansprechen kann, muss die QA-Page existieren:
-
-1. Online Store -> Pages -> "QA Block Test" anlegen
-2. Theme-Template auf `qa-block-test` setzen (rechte Seitenleiste)
-3. Page veroeffentlichen
+Eine eigene QA-Page im Shop ist nicht noetig: Getestet wird auf der Homepage
+bzw. der Seite, zu der die geaenderte Datei gehoert.
 
 ## QA-Workflow pro Block
 
 ```bash
 # 1) Code-Aenderung commiten
 # 2) Theme pushen (aktualisiert das Dev-Theme im Store)
-shopify theme push -e development
+shopify theme push -e development --nodelete
 
 # 3) Komplett-Check
 npm run qa:full
 ```
 
-`qa:full` laeuft `theme check` + Playwright Tests.
+`qa:full` laeuft `theme check` + Playwright Tests. Screenshots landen in
+`qa-screenshots/`, der HTML-Report in `playwright-report/`.
 
 ## Production-Push
 
