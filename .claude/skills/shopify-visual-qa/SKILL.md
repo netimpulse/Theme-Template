@@ -3,28 +3,20 @@ name: shopify-visual-qa
 description: Geschlossener Visual-QA-Workflow für Shopify-Themes via Shopify CLI + Playwright. Verwende diesen Skill bei jeder Erstellung, Änderung oder Fehlerbehebung an Sections, Blocks, Snippets, Templates oder Storefront-CSS/JS — egal ob für Page-Blocks, Produktseiten, Cart, Collections, Header, Footer oder andere Storefront-Bereiche. Der Skill pickt automatisch die richtige Test-URL anhand der geänderten Datei und funktioniert mit Claude Code Web's PR-Flow, weil das Test-Theme via Shopify CLI direkt aus der Arbeits-Branch heraus aktualisiert wird. Trigger automatisch bei .liquid-Dateien, Schemas, Sections, Blocks, Snippets, Storefront-UI, oder wenn der Nutzer Begriffe wie "Block bauen", "Produktseite anpassen", "Cart umbauen", "Header ändern", "QA-Schleife", "Visual Test" nutzt.
 ---
 
-# Shopify Visual QA Workflow (v5 — Homepage als Default-Test-Target)
+# Shopify Visual QA Workflow
+
+Geschlossene Schleife für jede Storefront-Änderung: Code ändern → ins Test-Theme pushen → Playwright gegen die echte Seite laufen lassen → Screenshots ansehen → nachbessern. Die Code-Regeln für Liquid und den Theme-Editor stehen in `CLAUDE.md`.
 
 ## Architektur
 
-Im Dev-Store gibt es zwei Themes mit zwei Aufgaben:
+| Theme im Dev-Store | Rolle |
+|---|---|
+| GitHub-synced Main-Theme | Spiegel von `main`, nicht für Tests |
+| Test-Theme (UNPUBLISHED) | Ziel aller Tests, wird per Shopify CLI aus der aktuellen Arbeits-Branch gepusht |
 
-| Theme | Rolle | Genutzt für |
-|---|---|---|
-| GitHub-synced Main-Theme | UNPUBLISHED oder MAIN | „Spiegel" von main, nicht für Tests |
-| Test/QA-Theme (separat) | UNPUBLISHED, CLI-pushbar | Ziel aller Playwright-Tests. Wird via Shopify CLI aus der jeweils aktuellen Arbeits-Branch gepusht. |
+Die Theme-IDs stehen in `shopify.theme.toml` (development) und `tests/fixtures.ts` (`themeId`). So läuft die Schleife unabhängig davon, ob Claude Code Web auf einer PR-Branch arbeitet.
 
-Die konkreten Theme-IDs stehen in `shopify.theme.toml` (development-Environment) und `tests/fixtures.ts` (themeId). Dieser Aufbau entkoppelt den Test von Git-Branches: Selbst wenn Claude Code Web zwingend PRs erzeugt, kann der QA-Loop laufen, weil das Test-Theme den Stand der Arbeits-Branch widerspiegelt.
-
-## Wichtig: KEIN dediziertes QA-Template
-
-Frühere Skill-Versionen verlangten eine eigene Page `/pages/qa-block-test` mit Template `qa-block-test` im Shop. **Das ist nicht mehr nötig.** Der Default-Test-Pfad ist jetzt die **Homepage `/`**, und Claude baut den neuen Block bei Bedarf temporär in das jeweilige Ziel-Template ein.
-
-Vorteile:
-- Realistischer Kontext: der Block wird neben Header/Footer und anderen Sections gerendert
-- Keine Page-Verwaltung im Admin
-- Erkennt „Works in isolation, breaks in real context"-Probleme
-- Weniger Boilerplate im Repo
+Es gibt kein QA-Template und keine QA-Page: Getestet wird auf der Homepage oder auf der Seite, zu der die geänderte Datei gehört (Schritt 1). Keine `qa-*.json`-Templates anlegen und keine QA-Pages im Admin vorschlagen, außer der Nutzer will es ausdrücklich.
 
 ## 0 — Umgebungs-Check (einmal pro Session)
 
@@ -36,151 +28,103 @@ echo "Theme-Token: $([ -n "$SHOPIFY_CLI_THEME_TOKEN" ] && echo gesetzt || echo N
 echo "Storefront-PW: $([ -n "$SHOPIFY_STOREFRONT_PASSWORD" ] && echo gesetzt || echo NEIN)"
 ```
 
-`SHOPIFY_CLI_THEME_TOKEN` ist Pflicht. `SHOPIFY_STOREFRONT_PASSWORD` ist optional — bei Live-Stores ohne Passwortschutz wird der Login automatisch geskippt.
+`SHOPIFY_CLI_THEME_TOKEN` ist Pflicht. `SHOPIFY_STOREFRONT_PASSWORD` ist optional — ohne Passwortschutz überspringt `tests/global-setup.ts` den Login.
 
-Wenn eine Pflicht-Variable fehlt: stoppe, frag den Nutzer einmal in der Session. Niemals in eine committete Datei schreiben.
+Fehlt eine Pflicht-Variable: stoppen und den Nutzer einmal in der Session fragen. Nie in eine committete Datei schreiben.
 
-Wenn Tools fehlen: `npm install`, `npx playwright install chromium`.
+Fehlen Tools: `npm install`, `npx playwright install chromium`.
 
+## 0.5 — Repo-Config-Check (einmal pro Repo)
 
-## 0.5 — Repo-Config-Check (einmalig beim ersten Auftrag pro Repo)
-
-Frisch aus dem Template geklonte Files enthalten Platzhalter, die pro Shop einmal ersetzt werden müssen. Produkt- und Collection-Handles **brauchst du nicht** zu setzen — die ermittelt der `tests/global-setup.ts` automatisch beim ersten Testlauf via `/products.json` und `/collections.json` und legt sie in `playwright/.auth/discovered.json` ab.
-
-Was du wirklich setzen musst sind nur **zwei** Werte: die Store-Domain und die Test-Theme-ID.
+Frisch aus dem Template erzeugte Repos enthalten Platzhalter. Produkt- und Collection-Handles muss niemand setzen — die ermittelt `tests/global-setup.ts` beim ersten Lauf über `/products.json` und `/collections.json` und legt sie in `playwright/.auth/discovered.json` ab.
 
 ```bash
 grep -rn "__THEME_ID__\|__STORE_DOMAIN__\|__PROD_THEME_ID__" \
   shopify.theme.toml playwright.config.ts tests/fixtures.ts tests/global-setup.ts 2>/dev/null
 ```
 
-Falls Platzhalter gefunden werden: **stoppe den Workflow** und gehe wie folgt vor.
+Bei Treffern den Workflow stoppen und die zwei Werte setzen:
 
-### Schritt A — Werte ermitteln
+1. **Ermitteln.** Mit Shopify-MCP: `get-shop-info` liefert die Store-Domain; per `themes()`-Query das Test-Theme finden (bevorzugt UNPUBLISHED mit Namen wie „Test", „QA Preview" oder „Sandbox", sonst das erste UNPUBLISHED; gibt es keins, ein Duplikat per `themeDuplicate` vorschlagen). Ohne MCP den Nutzer nach beiden Werten fragen.
+2. **Einsetzen.**
 
-Wenn Shopify-MCP verfügbar ist:
-1. `get-shop-info` → Store-Domain (z. B. `fashion-o4ccall8.myshopify.com`)
-2. `themes()` query → Test-Theme finden:
-   - Bevorzugt ein UNPUBLISHED Theme mit Name "Test", "QA Preview" oder "Sandbox"
-   - Sonst das erste UNPUBLISHED Theme
-   - Wenn keins existiert: vorschlagen, eines via `themeDuplicate` zu erzeugen
+   | Datei | Platzhalter → Wert |
+   |---|---|
+   | `shopify.theme.toml` | `__STORE_DOMAIN__` → Store-Handle (ohne `.myshopify.com`), `__THEME_ID__` → Test-Theme-ID |
+   | `tests/fixtures.ts` | `__THEME_ID__` → Test-Theme-ID |
+   | `playwright.config.ts` | `__STORE_DOMAIN__` → Store-Handle |
+   | `tests/global-setup.ts` | `__STORE_DOMAIN__` → Store-Handle |
 
-Wenn Shopify-MCP nicht verfügbar ist: nach den zwei Werten fragen.
+3. **Prüfen:** keine `__…__`-Platzhalter mehr, Store-Domain überall gleich (mit MCP gegen `get-shop-info` abgleichen).
 
-### Schritt B — In die Files setzen
+## 1 — Test-URL bestimmen
 
-| Datei | Platzhalter → Wert |
-|---|---|
-| `shopify.theme.toml` | `__STORE_DOMAIN__` → Store-Handle (ohne `.myshopify.com`); `__THEME_ID__` → Test-Theme-ID |
-| `tests/fixtures.ts` | `__THEME_ID__` → Test-Theme-ID |
-| `playwright.config.ts` | `__STORE_DOMAIN__` → Store-Handle |
-| `tests/global-setup.ts` | `__STORE_DOMAIN__` → Store-Handle |
+Vor dem Coden festlegen, gegen welche URL getestet wird:
 
-Produkt- und Collection-Handles **nicht** hardcoden — sie werden zur Laufzeit automatisch aus dem aktuell verbundenen Shop ermittelt.
+1. **Der Nutzer nennt das Ziel:** „auf die Produktseite" → `QA.paths.product`, „in den Cart" → `QA.paths.cart`, Header oder Footer → `QA.paths.home`, eine bestimmte Page → deren URL.
+2. **Sonst nach Datei:**
 
-### Schritt C — Verifizieren
+   | Geänderte Datei | Test-URL |
+   |---|---|
+   | `sections/product-*`, `snippets/product-*`, `templates/product.json` | `QA.paths.product` |
+   | `sections/cart-*`, `templates/cart.json` | `QA.paths.cart` |
+   | `sections/collection-*`, `templates/collection.json` | `QA.paths.collection` |
+   | `sections/search.liquid`, `templates/search.json` | `QA.paths.search` |
+   | `sections/404.liquid` | `QA.paths.notFound` |
+   | Header, Footer, `layout/theme.liquid` | `QA.paths.home` |
+   | alles andere | `QA.paths.home` |
 
-- Keine `__...__`-Platzhalter mehr in den vier Files
-- Store-Domain ist überall identisch
-- Falls Shopify-MCP verfügbar: `get-shop-info` bestätigt Übereinstimmung mit dem hardcoded Wert
+3. **Die Ziel-Page existiert nicht** (z. B. `/pages/services`): gegen `QA.paths.home` testen und dem Nutzer sagen, dass die Page fehlt und angelegt werden kann.
 
-Erst dann mit Schritt 1 weitermachen. Beim ersten Test-Lauf legt global-setup.ts dann `discovered.json` an mit dem ersten Produkt/Collection aus dem Shop — ab da nutzt der Workflow diese Werte automatisch.
+## 2 — Ablauf pro Aufgabe
 
+### 2.1 Komponente bauen
 
-## 1 — Test-Ziel-URL bestimmen
+Nach den Regeln in `CLAUDE.md`.
 
-Bevor du den Code schreibst, entscheide klar, **gegen welche URL** der Block getestet wird. Logik in dieser Reihenfolge prüfen:
+### 2.2 Section temporär ins Ziel-Template einbauen
 
-### 1.1 Hat der Nutzer ein konkretes Ziel-Template genannt?
-
-Beispiele aus User-Prompts:
-- „Bau das auf die Produktseite" → `QA.paths.product`
-- „Pack das in den Cart" → `QA.paths.cart`
-- „Footer-Anpassung" → `QA.paths.home` (Footer ist überall sichtbar, Homepage reicht)
-- „Header" → `QA.paths.home`
-- „Für die Kontaktseite" → existierende Kontakt-Page-URL falls vorhanden
-
-### 1.2 Folgt das Ziel-Template aus dem Datei-Pfad?
-
-| Geänderte Datei | Default Test-URL |
-|---|---|
-| `sections/product-*.liquid`, `templates/product.json`, `snippets/product-*.liquid` | `QA.paths.product` |
-| `sections/cart-*.liquid`, `templates/cart.json` | `QA.paths.cart` |
-| `sections/collection-*.liquid`, `templates/collection.json` | `QA.paths.collection` |
-| `sections/search.liquid`, `templates/search.json` | `QA.paths.search` |
-| `sections/404.liquid` | `QA.paths.notFound` |
-| `sections/header*.liquid`, `sections/footer*.liquid`, `layout/theme.liquid` | `QA.paths.home` |
-| Sonstige Sections/Blocks ohne klare Zugehörigkeit | **`QA.paths.home` als Default** |
-
-### 1.3 Wenn die Ziel-Page nicht existiert
-
-Falls der Nutzer eine Page nennt, die nicht existiert (z. B. „testen auf Service-Page" aber `/pages/services` ist nicht im Shop): **fallback auf `QA.paths.home`** und im Status klar dem Nutzer kommunizieren:
-
-```
-Die Page /pages/services existiert noch nicht im Shop. Test gegen
-Homepage als Fallback. Falls du willst, dass die Service-Page existiert,
-sag Bescheid — dann lege ich sie via Shopify-MCP (oder im Admin) an,
-bevor wir testen.
-```
-
-### 1.4 Kein dediziertes QA-Template mehr erzeugen
-
-Niemals eine neue `qa-*.json`-Template-Datei anlegen. Niemals eine neue Page im Shop-Admin für QA-Zwecke vorschlagen, es sei denn der Nutzer fragt explizit danach.
-
-## 2 — Workflow pro Aufgabe
-
-### 2.1 Komponente implementieren
-
-**Schema, Block-Wrapper, Editor-Safe-JS, Mobile-first CSS** — Standard-Regeln aus `shopify-liquid` Skill:
-
-- `default`-Werte für jede Setting
-- `presets` falls hinzufügbar
-- `{{ block.shopify_attributes }}` auf Block-Wrappern
-- `shopify:section:load`, `shopify:section:unload`, `shopify:block:select` Events handeln
-- Kein horizontaler Scroll bei Viewports ≥ 320px
-- `prefers-reduced-motion` Block in jeder CSS-Datei mit Animations
-- `color_scheme` Setting Pflicht
-
-### 2.2 Block ins Ziel-Template einbauen (temporär)
-
-**Nur wenn** der Block auf der Ziel-Page sichtbar sein muss, um ihn zu testen. Das ist für Page-Templates und Index-Template typisch. Bei Produkt/Cart/Collection ist es oft nicht nötig, weil die Sections schon dort eingebaut sind.
-
-Beispiel für Homepage-Test (Section-Eintrag in `templates/index.json` ergänzen):
+Nur nötig, wenn die Section dort noch nicht vorkommt (typisch: Homepage, Page-Templates). Beispiel `templates/index.json`:
 
 ```json
 {
   "sections": {
     "qa_new_block": {
       "type": "your-section-handle",
-      "settings": { /* realistische Dummy-Werte */ }
+      "settings": { /* realistische Werte */ }
     },
     ... bestehende Sections ...
   },
-  "order": ["qa_new_block", ... bestehender order ...]
+  "order": ["qa_new_block", ... bestehende Reihenfolge ...]
 }
 ```
 
-**Realistische Dummy-Werte:** echte Headlines wie „Wir bauen Möbel, die bleiben", echte Button-Labels. Keine Lorem-Ipsums, keine „Test Test"-Strings.
+Realistische Inhalte („Wir bauen Möbel, die bleiben", echte Button-Labels), kein Lorem Ipsum. Den temporären Eintrag im PR kennzeichnen oder vor dem Merge entfernen, falls er nicht nach `main` soll; im Test-Theme darf er bleiben.
 
-**Hinweis im PR:** Diesen temporären Eintrag im PR markieren oder vor dem Merge entfernen, falls er nicht in main soll. Im Test-Theme bleibt der Eintrag stehen — das ist okay, Test-Theme ist Sandbox.
+### 2.3 Block-Test schreiben
 
-### 2.3 Block-spezifischen Playwright-Test schreiben
-
-`tests/blocks/<component-handle>.spec.ts` anlegen oder updaten. Importiere `fixtures`:
+`tests/blocks/<component-handle>.spec.ts` anlegen oder erweitern:
 
 ```ts
 import { test, expect } from "@playwright/test";
 import { QA, withTheme } from "../fixtures";
 
 test.describe("<component-handle>", () => {
-  test("…", async ({ page }) => {
-    await page.goto(withTheme(QA.paths.home)); // oder die richtige Ziel-URL aus Schritt 1
-    // Assertions
+  test("…", async ({ page }, testInfo) => {
+    await page.goto(withTheme(QA.paths.home)); // Ziel-URL aus Schritt 1
+    const section = page.locator("<Selektor der Section>");
+    await expect(section).toBeVisible();
+    // Interaktionen und Assertions …
+
+    // Screenshot für die Sichtprüfung in 2.6
+    await section.screenshot({
+      path: `qa-screenshots/<component-handle>-${testInfo.project.name}.png`,
+    });
   });
 });
 ```
 
-Testpattern nach Komponente:
+Bei Header-, Footer- oder Layout-Änderungen statt der Section die ganze Seite fotografieren (`page.screenshot({ path, fullPage: true })`).
 
 | Komponente | Was getestet wird |
 |---|---|
@@ -188,29 +132,28 @@ Testpattern nach Komponente:
 | Accordion | open/close pro Item, `aria-expanded` |
 | Tabs | Panel-Wechsel, nur eins sichtbar |
 | Video | Player initialisiert, Controls vorhanden |
-| Button mit Link | href stimmt mit Schema-Setting |
-| Form | Felder fillable, Submit erreichbar (nicht echt absenden) |
+| Button mit Link | `href` stimmt mit dem Schema-Setting |
+| Form | Felder ausfüllbar, Submit erreichbar (nicht echt absenden) |
 | Variant-Switcher | Klick auf Variante ändert Preis/SKU |
-| Add-to-Cart | Klick ergibt `cart.added`-Toast oder Cart-Drawer |
+| Add-to-Cart | Klick öffnet Cart-Drawer oder zeigt Bestätigung |
 
-Generika aus `tests/_base.spec.ts` nicht duplizieren — die laufen ohnehin.
+Die generischen Checks aus `tests/_base.spec.ts` (Konsolenfehler, leeres Layout, kaputte Bilder, Homepage-Screenshots) laufen immer mit — nicht duplizieren.
 
-### 2.4 Cart-Tests speziell
+### 2.4 Cart-Tests
 
-Cart braucht einen Vorzustand: ein Produkt muss drin sein. Im Test selbst:
+Der Cart braucht ein Produkt. Die Variant-ID ermittelt `global-setup.ts` automatisch:
 
 ```ts
-test.beforeEach(async ({ page, context }) => {
+test.beforeEach(async ({ context }) => {
+  test.skip(!QA.firstVariantId, "Kein Produkt im Shop gefunden");
   await context.request.post(withTheme("/cart/add.js"), {
     headers: { "Content-Type": "application/json" },
-    data: { items: [{ id: <VARIANT_ID>, quantity: 1 }] },
+    data: { items: [{ id: QA.firstVariantId, quantity: 1 }] },
   });
 });
 ```
 
-Variant-ID aus `tests/fixtures.ts` ziehen, falls dort definiert.
-
-### 2.5 Push zum Test-Theme + Tests
+### 2.5 Ins Test-Theme pushen und testen
 
 ```bash
 shopify theme check
@@ -218,20 +161,19 @@ shopify theme push -e development --nodelete
 npx playwright test
 ```
 
-`--nodelete` schützt vor versehentlichen Löschungen, wenn die Branch unvollständig ist.
+Errors aus `theme check` blockieren. `--nodelete` verhindert, dass Dateien im Test-Theme gelöscht werden, wenn die Branch unvollständig ist.
 
-### 2.6 Korrekturschleife
+### 2.6 Screenshots ansehen und nachbessern
 
-Bei rotem Test:
-- Screenshots aus `qa-screenshots/` ansehen
-- HTML-Report unter `playwright-report/index.html`
-- Konsole + DOM des fehlschlagenden Elements
+Nach **jedem** Testlauf, auch wenn alles grün ist:
 
-Maximal **drei** Iterationen. Danach Stopp + Statusbericht.
+1. Die Screenshots mit dem Read-Tool öffnen: `qa-screenshots/<component-handle>-desktop.png` und `-mobile.png`, dazu `desktop-base.png` und `mobile-base.png` (Homepage).
+2. Mit dem Ziel vergleichen: Sieht es aus wie gewollt? Auf Layout, Abstände, Umbrüche, Überlappungen, abgeschnittene Texte, fehlende Bilder und horizontales Scrollen (ab 320 px Breite) achten, auf Desktop und Mobile.
+3. Bei roten Tests zusätzlich: Fehlermeldung, Fehler-Screenshots und Traces unter `test-results/`, den HTML-Report `playwright-report/index.html`, Konsole und DOM des betroffenen Elements.
 
-Niemals mit roten Tests committen.
+Gefundenes beheben und zurück zu 2.5. Höchstens **drei** Runden, danach stoppen und berichten, was probiert wurde und was offen ist. Nie mit roten Tests committen.
 
-### 2.7 Git-Commit und Push
+### 2.7 Commit und Push
 
 ```bash
 git add .
@@ -239,42 +181,31 @@ git commit -m "<type>: <komponente> - <kurzbeschreibung>"
 git push
 ```
 
-Claude Code Web öffnet einen PR. Das ist gewollt — der Nutzer reviewt und mergt.
+Claude Code Web öffnet daraus einen PR, der Nutzer reviewt und mergt. Das Test-Theme ist schon in 2.5 aktualisiert. Commit-Typen: `feat`, `fix`, `refactor`, `chore`, `style`, `perf`.
 
-Commit-Typen: `feat`, `fix`, `refactor`, `chore`, `style`, `perf`.
+## 3 — Production-Push (nur auf ausdrücklichen Wunsch)
 
-## 3 — Production-Push (nur auf explizite Anforderung)
+1. `[environments.production]` in `shopify.theme.toml` hat Store und Theme-ID des Kundenshops; ein eigenes Theme-Access-Token für diesen Shop ist gesetzt.
+2. Die `ignore`-Liste in `shopify.theme.toml` hält Tests und QA-Dateien heraus.
+3. `shopify theme push -e production`
+4. Den Nutzer bitten, die Live-Seite selbst kurz zu prüfen — echte Shopdaten können etwas brechen, das im Dev-Store grün war.
 
-Wie zuvor. Production-Push passiert nie automatisch.
+## 4 — Sicherheit
 
-`ignore`-Liste in `shopify.theme.toml` muss QA-Pfade ausschließen.
-
-## 4 — Sicherheitsregeln
-
-- `SHOPIFY_CLI_THEME_TOKEN` und `SHOPIFY_STOREFRONT_PASSWORD` niemals in committete Files, Commit-Messages, Logs
-- Wenn fehlt: in Session beim Nutzer erfragen
-- `playwright/.auth/` ist gitignored
-- Test-Fixtures aus `tests/fixtures.ts` nicht ohne Grund löschen oder umbenennen
+- `SHOPIFY_CLI_THEME_TOKEN` und `SHOPIFY_STOREFRONT_PASSWORD` nie in committete Dateien, Commit-Messages oder Logs; fehlt einer, in der Session beim Nutzer erfragen.
+- `playwright/.auth/` ist gitignored, dort wird nichts committet.
+- Fixtures in `tests/fixtures.ts` nicht ohne Grund löschen oder umbenennen.
 
 ## 5 — Schnellreferenz
 
-| Situation | Aktion |
+| Situation | Schritte |
 |---|---|
-| Neuer Block ohne klares Ziel-Template | 2.1, 2.2 (in `templates/index.json`), 2.3 mit `QA.paths.home`, 2.5–2.7 |
-| Section für die Homepage | 2.1, 2.2, 2.3 mit `QA.paths.home`, 2.5–2.7 |
-| Product-Page-Anpassung | 2.1, 2.3 mit `QA.paths.product`, 2.5–2.7 |
-| Cart-Anpassung | 2.1, 2.3 + 2.4 beforeEach mit `QA.paths.cart`, 2.5–2.7 |
-| Collection-Anpassung | 2.1, 2.3 mit `QA.paths.collection`, 2.5–2.7 |
-| Header/Footer/Layout-Änderung | 2.1, 2.3 mit `QA.paths.home`, 2.5–2.7 |
-| Search/404 | 2.1, 2.3 mit `QA.paths.search`/`notFound`, 2.5–2.7 |
-| Ziel-Page existiert nicht | Fallback `QA.paths.home`, Nutzer informieren |
-| Production-Deploy | 3, nur auf Anforderung |
+| Neue Section oder neuer Block ohne klares Ziel | 2.1, 2.2 (`templates/index.json`), 2.3 mit `QA.paths.home`, 2.5–2.7 |
+| Produktseite | 2.1, 2.3 mit `QA.paths.product`, 2.5–2.7 |
+| Cart | 2.1, 2.3 + 2.4 mit `QA.paths.cart`, 2.5–2.7 |
+| Collection | 2.1, 2.3 mit `QA.paths.collection`, 2.5–2.7 |
+| Header, Footer, Layout | 2.1, 2.3 mit `QA.paths.home` und Full-Page-Screenshot, 2.5–2.7 |
+| Search, 404 | 2.1, 2.3 mit `QA.paths.search` bzw. `QA.paths.notFound`, 2.5–2.7 |
+| Ziel-Page fehlt | Fallback `QA.paths.home`, Nutzer informieren |
 | ENV-Variable fehlt | 0, Nutzer fragen |
-
-## 6 — Was sich von früheren Versionen geändert hat
-
-- **Kein dediziertes QA-Template mehr.** `templates/page.qa-block-test.json` muss nicht mehr existieren. Tests laufen direkt gegen die Homepage oder das jeweilige Ziel-Template
-- **Default-Test-URL ist Homepage `/`**, nicht mehr `/pages/qa-block-test`
-- **Block-Einbau geschieht im Ziel-Template** (z. B. `templates/index.json`), nicht in einem QA-Template
-- **`SHOPIFY_STOREFRONT_PASSWORD` ist optional** — global-setup macht Auto-Skip bei Live-Stores ohne Passwortschutz
-- **Fallback-Strategie** für nicht existierende Ziel-Pages explizit dokumentiert
+| Production | 3, nur auf Anforderung |
